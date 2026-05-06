@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: flover_postgres
+    restart: always
+    env_file:
+      - ./go-app/.env
+    environment:
+      - POSTGRES_DB=${DB_NAME:-flover_db}
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-123}
+      - TZ=${DB_TIMEZONE:-Asia/Ho_Chi_Minh}
+    ports:
+      - "5433:5432" # Map host port to container port (DB_PORT in .env is 5433)
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - flover_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: flover_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - flover_network
+
+  go-app:
+    build:
+      context: ./go-app
+      dockerfile: Dockerfile.dev
+    container_name: flover_go_app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount the go-app directory into the container to allow hot-reloading
+      - ./go-app:/app
+    env_file:
+      - ./go-app/.env
+    environment:
+      # Override the variables to point to the docker network aliases instead of localhost
+      - DB_HOST=postgres
+      - DB_PORT=5432 # Internally postgres listens on 5432 inside the network
+      - REDIS_HOST=redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - flover_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  flover_network:
+    driver: bridge
