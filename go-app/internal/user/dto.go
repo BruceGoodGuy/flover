@@ -7,3 +7,7 @@ type CreateRequest struct {
 	Password   string `json:"password" binding:"required,gt=8,lt=20"`
 	RePassword string `json:"re_password" binding:"required,gt=8,lt=20,eqfield=Password"`
 }
+
+type EmailRequest struct {
+	Email string `json:"email" form:"email" binding:"required,email"`
+}

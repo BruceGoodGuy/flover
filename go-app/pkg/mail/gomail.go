@@ -1,17 +1,20 @@
 package mail
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
+	"text/template"
 
 	gomail "github.com/mrz1836/go-mail"
 )
 
 type MailInterface interface {
-	Send(cx context.Context) error
+	Send(ctx context.Context, to string, subject string, templateName string, data any) error
 }
 
 type Mail struct {
@@ -43,13 +46,31 @@ func (m *Mail) NewMail() *Mail {
 	return &Mail{Mail: mail, Provider: provider}
 }
 
-func (mail *Mail) Send(ctx context.Context, to string, content string, subject string) error {
+func (mail *Mail) Send(ctx context.Context, to string, subject string, templateName string, data any) error {
+	// 1. Build the path to the template file
+	// The templates are located in the "templates" folder at the project root
+	templatePath := filepath.Join("templates", templateName+".html")
+
+	// 2. Parse and execute the HTML template
+	tmpl, err := template.ParseFiles(templatePath)
+	if err != nil {
+		return fmt.Errorf("failed to parse template %s at %s: %w", templateName, templatePath, err)
+	}
+
+	var body bytes.Buffer
+	if err := tmpl.Execute(&body, data); err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	// 3. Prepare the email using go-mail
 	m := mail.Mail.NewEmail()
-	m.HTMLContent = fmt.Sprintf("<html><body>%s</body></html>", content)
+	m.HTMLContent = body.String() // The executed HTML string
 	m.Recipients = []string{to}
 	m.Subject = subject
-	if err := mail.Mail.SendEmail(context.Background(), m, mail.Provider); err != nil {
-		log.Printf("error in SendEmail: %s using provider: %x", err.Error(), mail.Provider)
+
+	// 4. Send the email
+	if err := mail.Mail.SendEmail(ctx, m, mail.Provider); err != nil {
+		fmt.Printf("error in SendEmail: %s using provider: %v\n", err.Error(), mail.Provider)
 		return err
 	}
 

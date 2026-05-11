@@ -3,6 +3,7 @@ package user
 import "context"
 
 type UserServiceInt interface {
+	CreateUser(ctx context.Context, userData CreateRequest) error
 }
 
 type UserService struct {
@@ -15,6 +16,10 @@ func NewUserService(r *UserRepository) *UserService {
 	}
 }
 
-func CreateUser(ctx *context.Context, userData CreateRequest) {
+func (s *UserService) VerifyEmailExist(ctx context.Context, email string) (bool, error) {
+	return s.r.CheckEmailExist(ctx, email)
+}
 
+func (s *UserService) CreateUser(ctx context.Context, userData CreateRequest) error {
+	return s.r.Store(ctx, userData)
 }
