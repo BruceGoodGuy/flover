@@ -2,6 +2,7 @@ package user
 
 import (
 	"net/http"
+	"strings"
 
 	"BruceGoodGuy/flover/pkg/response"
 
@@ -9,6 +10,9 @@ import (
 )
 
 type UserHandlerInt interface {
+	VerifyEmailExist(ctx *gin.Context)
+	CreateUser(ctx *gin.Context)
+	ConfirmAccount(ctx *gin.Context)
 }
 
 type UserHandler struct {
@@ -28,7 +32,7 @@ func (h *UserHandler) VerifyEmailExist(ctx *gin.Context) {
 			return
 		}
 	}
-	if isExist, err := h.s.VerifyEmailExist(ctx, email.Email); err == nil {
+	if isExist, err := h.s.VerifyEmailExist(ctx, strings.ToLower(email.Email)); err == nil {
 		if isExist {
 			ctx.JSON(http.StatusUnprocessableEntity, response.Response{IsSuccess: false, Message: "Duplicate email"})
 			return
@@ -68,4 +72,23 @@ func (h *UserHandler) CreateUser(ctx *gin.Context) {
 	}
 
 	response.Success(ctx, http.StatusCreated, "ok", user)
+}
+
+func (h *UserHandler) ConfirmAccount(ctx *gin.Context) {
+	var token ConfirmRequest
+	if err := ctx.ShouldBindQuery(&token); err != nil {
+		if response.HandleBindError(ctx, err) {
+			return
+		}
+	}
+	result, _ := h.s.ConfirmAccount(ctx, token.Token)
+	if !result {
+		ctx.JSON(http.StatusRequestTimeout, response.Response{IsSuccess: false, Message: "Expire token"})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, response.Response{
+		IsSuccess: true,
+		Message:   "Create successfully",
+	})
 }

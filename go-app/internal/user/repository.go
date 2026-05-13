@@ -62,11 +62,15 @@ func (r *UserRepository) Store(ctx context.Context, req CreateRequest) error {
 
 	key := rand.Text()
 
-	r.cache.Set(ctx, "register:token:"+key, string(jsonData), 5*time.Minute)
+	ttl := 5 * time.Minute
+
+	// Lock the email to prevent duplicate pending registrations.
+	r.cache.Set(ctx, "register:email:"+u.Email, key, ttl)
+	r.cache.Set(ctx, "register:token:"+key, string(jsonData), ttl)
 
 	emailData := map[string]interface{}{
 		"name":            u.FirstName,
-		"activation_link": os.Getenv("APP_HOST") + "/user/verify?token=" + key,
+		"activation_link": os.Getenv("APP_HOST") + "/user/confirm?token=" + key,
 	}
 
 	mailContext := context.Background()
@@ -94,6 +98,10 @@ func (r *UserRepository) InitBloomFilter(ctx context.Context) error {
 
 // CheckEmailExist is purely for API live-check (e.g. typing email on register form)
 func (r *UserRepository) CheckEmailExist(ctx context.Context, email string) (bool, error) {
+	val, err := r.cache.Exists(ctx, "register:email:"+email).Result()
+	if err == nil && val > 0 {
+		return true, nil
+	}
 	exists, err := r.cache.BFExists(ctx, "users:email", email).Result()
 	if err != nil {
 		fmt.Printf("[BloomFilter] Check error, fallback to DB: %v\n", err)
@@ -116,4 +124,51 @@ func (r *UserRepository) checkEmailExistInDB(ctx context.Context, email string) 
 		return false, err
 	}
 	return count > 0, nil
+}
+
+func (r *UserRepository) ConfirmAccount(ctx context.Context, token string) (bool, error) {
+
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("[ActivateAccount] DB error, Can't activate account: %v", r)
+		}
+	}()
+
+	data, err := r.cache.Get(ctx, "register:token:"+token).Result()
+
+	if err == redis.Nil {
+		fmt.Printf("[ActivateAccount] Token not found")
+		return false, err
+	} else if err != nil {
+		fmt.Printf("[ActivateAccount] Check error, Can't active account")
+		return false, err
+	}
+	var userData User
+
+	err = json.Unmarshal([]byte(data), &userData)
+
+	if err != nil {
+		fmt.Printf("[ActivateAccount] Can't decode user data")
+		return false, err
+	}
+
+	fmt.Printf("[ActivateAccount] Decoded user: %s\n", userData.Email)
+
+	userData.Status = "active"
+
+	if err := r.db.WithContext(ctx).Create(&userData).Error; err != nil {
+		fmt.Printf("[ActivateAccount] DB error: %v\n", err)
+		return false, err
+	}
+
+	if ok, err := r.cache.BFAdd(ctx, "users:email", userData.Email).Result(); err != nil || !ok {
+		fmt.Printf("[ActivateAccount] Can't add %s to bloom filter\n", userData.Email)
+		fmt.Printf("error: %v", err.Error())
+	}
+
+	if _, err := r.cache.Del(ctx, "register:token:"+token, "register:email:"+userData.Email).Result(); err != nil {
+		fmt.Printf("[ActivateAccount] Can't remove cache keys\n")
+	}
+
+	return true, nil
 }

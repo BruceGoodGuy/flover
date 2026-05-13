@@ -45,8 +45,9 @@ func (a *AppContainer) Routes() {
 	}
 	user := v1.Group("user")
 	{
-		user.POST("create", a.UserHandler.CreateUser)
-		user.GET("verify", middleware.RateLimit(5, "m"), a.UserHandler.VerifyEmailExist)
+		user.POST("/create", a.UserHandler.CreateUser)
+		user.GET("/verify", middleware.RateLimit(5, "m"), a.UserHandler.VerifyEmailExist)
+		user.GET("/confirm", middleware.RateLimit(100, "m"), a.UserHandler.ConfirmAccount)
 	}
 	r.Run(":8080")
 }

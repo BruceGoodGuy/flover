@@ -23,3 +23,7 @@ func (s *UserService) VerifyEmailExist(ctx context.Context, email string) (bool,
 func (s *UserService) CreateUser(ctx context.Context, userData CreateRequest) error {
 	return s.r.Store(ctx, userData)
 }
+
+func (s *UserService) ConfirmAccount(ctx context.Context, token string) (bool, error) {
+	return s.r.ConfirmAccount(ctx, token)
+}
