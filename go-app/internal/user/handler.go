@@ -1,6 +1,8 @@
 package user
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -102,18 +104,35 @@ func (h *UserHandler) Authenticate(ctx *gin.Context) {
 			return
 		}
 	}
-	exist, err := h.s.VerifyEmailExist(ctx, userData.Email, true)
 
-	if err == nil && !exist {
+	userData.Email = strings.ToLower(userData.Email)
+	tokens, ttl, err := h.s.Authenticate(ctx, userData)
+
+	if errors.Is(err, ErrInvalidCredentials) {
 		ctx.JSON(http.StatusNotFound, response.Response{IsSuccess: false, Message: "Invalid user data"})
 		return
 	}
-	isSuccess, err := h.s.Authenticate(ctx, userData)
-
-	if err != nil || !isSuccess {
-		ctx.JSON(http.StatusNotFound, response.Response{IsSuccess: false, Message: "Invalid user data"})
+	if err != nil {
+		fmt.Printf("%s", err.Error())
+		ctx.JSON(http.StatusInternalServerError, response.Response{IsSuccess: false, Message: "Something went wrong! Please try again later"})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, response.Response{IsSuccess: true, Message: "Ok"})
+	http.SetCookie(ctx.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    tokens.RefreshToken,
+		Path:     "/",
+		MaxAge:   int(ttl.Seconds()),
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	ctx.JSON(http.StatusOK, response.Response{
+		IsSuccess: true,
+		Message:   "Ok",
+		Data: AuthResponse{
+			AccessToken: tokens.AccessToken,
+		},
+	})
 }

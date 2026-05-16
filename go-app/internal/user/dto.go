@@ -17,6 +17,15 @@ type ConfirmRequest struct {
 }
 
 type UserLogin struct {
-	Email    string `json:"email" binding:"required|email"`
+	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,gt=8,lt=20"`
+}
+
+type Tokens struct {
+	RefreshToken string `json:"refresh_token"`
+	AccessToken  string `json:"access_token"`
+}
+
+type AuthResponse struct {
+	AccessToken string `json:"access_token"`
 }

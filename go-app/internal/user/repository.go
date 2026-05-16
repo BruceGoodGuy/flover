@@ -215,21 +215,30 @@ func (r *UserRepository) ConfirmAccount(ctx context.Context, token string) (bool
 	return true, nil
 }
 
-func (r *UserRepository) Authenticate(ctx context.Context, userData UserLogin) (bool, error) {
-	type a struct {
-		ID       int
-		Email    string
-		Password string
+func (r *UserRepository) FindByEmail(ctx context.Context, email string) (User, error) {
+	var u User
+	if err := r.db.WithContext(ctx).Where("email = ?", email).Select("id", "first_name", "last_name", "password", "email").First(&u).Error; err != nil {
+		return User{}, err
+	}
+	return u, nil
+}
+
+func (r *UserRepository) StoreRefreshToken(ctx context.Context, token string, ttl time.Duration, email string) {
+	key := "token:refresh:" + email + ":" + token
+	r.cache.Set(ctx, key, email, ttl)
+	iter := r.cache.Scan(ctx, 0, "token:refresh:"+email+":*", 0).Iterator()
+
+	for iter.Next(ctx) {
+		val := iter.Val()
+		if val == key {
+			continue
+		}
+		r.cache.Del(ctx, val)
 	}
 
-	var data a
-	if err := r.db.WithContext(ctx).Model(&User{}).Where("email = ?", userData.Email).First(&data).Error; err != nil {
-		return false, err
+	if err := iter.Err(); err != nil {
+		fmt.Printf("[StoreToken] Can't remove old token")
 	}
+	fmt.Printf("[StoreToken] Store token successfully")
 
-	if err := bcrypt.CompareHashAndPassword([]byte(data.Password), []byte(userData.Password)); err != nil {
-		return false, err
-	}
-
-	return true, nil
 }
