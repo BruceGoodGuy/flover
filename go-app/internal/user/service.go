@@ -16,8 +16,8 @@ func NewUserService(r *UserRepository) *UserService {
 	}
 }
 
-func (s *UserService) VerifyEmailExist(ctx context.Context, email string) (bool, error) {
-	return s.r.CheckEmailExist(ctx, email)
+func (s *UserService) VerifyEmailExist(ctx context.Context, email string, checkCacheOnly bool) (bool, error) {
+	return s.r.CheckEmailExist(ctx, email, checkCacheOnly)
 }
 
 func (s *UserService) CreateUser(ctx context.Context, userData CreateRequest) error {
@@ -26,4 +26,8 @@ func (s *UserService) CreateUser(ctx context.Context, userData CreateRequest) er
 
 func (s *UserService) ConfirmAccount(ctx context.Context, token string) (bool, error) {
 	return s.r.ConfirmAccount(ctx, token)
+}
+
+func (s *UserService) Authenticate(ctx context.Context, userData UserLogin) (bool, error) {
+	return s.r.Authenticate(ctx, userData)
 }

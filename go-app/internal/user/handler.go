@@ -32,7 +32,7 @@ func (h *UserHandler) VerifyEmailExist(ctx *gin.Context) {
 			return
 		}
 	}
-	if isExist, err := h.s.VerifyEmailExist(ctx, strings.ToLower(email.Email)); err == nil {
+	if isExist, err := h.s.VerifyEmailExist(ctx, strings.ToLower(email.Email), false); err == nil {
 		if isExist {
 			ctx.JSON(http.StatusUnprocessableEntity, response.Response{IsSuccess: false, Message: "Duplicate email"})
 			return
@@ -52,7 +52,7 @@ func (h *UserHandler) CreateUser(ctx *gin.Context) {
 		}
 	}
 
-	if isExist, err := h.s.VerifyEmailExist(ctx, user.Email); err == nil {
+	if isExist, err := h.s.VerifyEmailExist(ctx, user.Email, false); err == nil {
 		if isExist {
 			ctx.JSON(http.StatusUnprocessableEntity, response.Response{IsSuccess: false, Message: "Duplicate email"})
 			return
@@ -91,4 +91,29 @@ func (h *UserHandler) ConfirmAccount(ctx *gin.Context) {
 		IsSuccess: true,
 		Message:   "Create successfully",
 	})
+
+	// ctx.Redirect(http.StatusMovedPermanently, "http://www.google.com/")
+}
+
+func (h *UserHandler) Authenticate(ctx *gin.Context) {
+	var userData UserLogin
+	if err := ctx.ShouldBindJSON(&userData); err != nil {
+		if response.HandleBindError(ctx, err) {
+			return
+		}
+	}
+	exist, err := h.s.VerifyEmailExist(ctx, userData.Email, true)
+
+	if err == nil && !exist {
+		ctx.JSON(http.StatusNotFound, response.Response{IsSuccess: false, Message: "Invalid user data"})
+		return
+	}
+	isSuccess, err := h.s.Authenticate(ctx, userData)
+
+	if err != nil || !isSuccess {
+		ctx.JSON(http.StatusNotFound, response.Response{IsSuccess: false, Message: "Invalid user data"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, response.Response{IsSuccess: true, Message: "Ok"})
 }

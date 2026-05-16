@@ -15,3 +15,8 @@ type EmailRequest struct {
 type ConfirmRequest struct {
 	Token string `form:"token" json:"token" binding:"len=26"`
 }
+
+type UserLogin struct {
+	Email    string `json:"email" binding:"required|email"`
+	Password string `json:"password" binding:"required,gt=8,lt=20"`
+}

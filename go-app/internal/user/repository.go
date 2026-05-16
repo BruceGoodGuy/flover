@@ -34,6 +34,56 @@ func NewUserRepository(db *gorm.DB, cache *redis.Client, mb *mail.Mail) *UserRep
 	}
 }
 
+func (r *UserRepository) SeedBloomFilter(ctx context.Context) {
+	const batchSize = 1000
+
+	exists, err := r.cache.Exists(ctx, "users:email").Result()
+	if err != nil {
+		fmt.Printf("[SeedBloomFilter] Redis error: %v\n", err)
+		return
+	}
+	if exists > 0 {
+		fmt.Println("[SeedBloomFilter] Bloom filter already exists, skipping seed")
+		return
+	}
+
+	type emailRow struct {
+		ID    uint
+		Email string
+	}
+
+	var lastID uint = 0
+	for {
+		var rows []emailRow
+		err := r.db.WithContext(ctx).
+			Model(&User{}).
+			Select("id, email").
+			Where("id > ?", lastID).
+			Order("id ASC").
+			Limit(batchSize).
+			Scan(&rows).Error
+		if err != nil {
+			fmt.Printf("[SeedBloomFilter] DB error: %v\n", err)
+			break
+		}
+		if len(rows) == 0 {
+			break
+		}
+
+		pipe := r.cache.Pipeline()
+		for _, row := range rows {
+			pipe.Do(ctx, "BF.ADD", "users:email", row.Email)
+		}
+		if _, err := pipe.Exec(ctx); err != nil {
+			fmt.Printf("[SeedBloomFilter] Redis pipeline error: %v\n", err)
+		}
+
+		lastID = rows[len(rows)-1].ID
+		fmt.Printf("[SeedBloomFilter] Seeded %d emails, last ID: %d\n", len(rows), lastID)
+	}
+	fmt.Println("[SeedBloomFilter] Done")
+}
+
 // Store creates user and updates Bloom Filter if insert is successful
 func (r *UserRepository) Store(ctx context.Context, req CreateRequest) error {
 	u := User{
@@ -79,38 +129,29 @@ func (r *UserRepository) Store(ctx context.Context, req CreateRequest) error {
 	return nil
 }
 
-// InitBloomFilter should be called once when application starts
-func (r *UserRepository) InitBloomFilter(ctx context.Context) error {
-	exists, err := r.cache.Exists(ctx, "users:email").Result()
-	if err != nil {
-		return fmt.Errorf("redis check exists error: %w", err)
-	}
-
-	if exists != 1 {
-		_, err := r.cache.BFReserve(ctx, "users:email", 0.01, 10000).Result()
-		if err != nil {
-			return fmt.Errorf("redis bfreserve error: %w", err)
-		}
-		fmt.Println("[BloomFilter] Created new filter 'users:email'")
-	}
-	return nil
-}
-
 // CheckEmailExist is purely for API live-check (e.g. typing email on register form)
-func (r *UserRepository) CheckEmailExist(ctx context.Context, email string) (bool, error) {
+func (r *UserRepository) CheckEmailExist(ctx context.Context, email string, checkCacheOnly bool) (bool, error) {
 	val, err := r.cache.Exists(ctx, "register:email:"+email).Result()
 	if err == nil && val > 0 {
 		return true, nil
 	}
+
 	exists, err := r.cache.BFExists(ctx, "users:email", email).Result()
 	if err != nil {
 		fmt.Printf("[BloomFilter] Check error, fallback to DB: %v\n", err)
+		if checkCacheOnly {
+			return false, nil
+		}
 		return r.checkEmailExistInDB(ctx, email)
 	}
 
 	if !exists {
 		fmt.Printf("[BloomFilter] Email %s definitely not exist\n", email)
 		return false, nil
+	}
+
+	if checkCacheOnly {
+		return true, nil
 	}
 
 	fmt.Printf("[BloomFilter] Email %s maybe exist, checking DB...\n", email)
@@ -161,13 +202,33 @@ func (r *UserRepository) ConfirmAccount(ctx context.Context, token string) (bool
 		return false, err
 	}
 
-	if ok, err := r.cache.BFAdd(ctx, "users:email", userData.Email).Result(); err != nil || !ok {
-		fmt.Printf("[ActivateAccount] Can't add %s to bloom filter\n", userData.Email)
-		fmt.Printf("error: %v", err.Error())
+	if ok, err := r.cache.BFAdd(ctx, "users:email", userData.Email).Result(); err != nil {
+		fmt.Printf("[ActivateAccount] Can't add %s to bloom filter: %v\n", userData.Email, err)
+	} else if !ok {
+		fmt.Printf("[ActivateAccount] Email %s already exists in bloom filter\n", userData.Email)
 	}
 
 	if _, err := r.cache.Del(ctx, "register:token:"+token, "register:email:"+userData.Email).Result(); err != nil {
 		fmt.Printf("[ActivateAccount] Can't remove cache keys\n")
+	}
+
+	return true, nil
+}
+
+func (r *UserRepository) Authenticate(ctx context.Context, userData UserLogin) (bool, error) {
+	type a struct {
+		ID       int
+		Email    string
+		Password string
+	}
+
+	var data a
+	if err := r.db.WithContext(ctx).Model(&User{}).Where("email = ?", userData.Email).First(&data).Error; err != nil {
+		return false, err
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(data.Password), []byte(userData.Password)); err != nil {
+		return false, err
 	}
 
 	return true, nil

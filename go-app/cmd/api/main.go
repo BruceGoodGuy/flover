@@ -29,6 +29,6 @@ func main() {
 	mb := new(mail.Mail).NewMail()
 
 	application := app.NewAppContainer(db, rdb, mb)
-
+	application.Bootstrap()
 	application.Routes()
 }
