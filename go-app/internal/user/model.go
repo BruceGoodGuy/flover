@@ -14,3 +14,12 @@ type User struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
+
+type UserLite struct {
+	Id        uint
+	FirstName string
+	LastName  string
+	Email     string
+	Role      string
+	Password  string
+}

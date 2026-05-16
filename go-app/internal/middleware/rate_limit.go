@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"BruceGoodGuy/flover/pkg/cache"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ulule/limiter/v3"
@@ -9,9 +10,11 @@ import (
 	"github.com/ulule/limiter/v3/drivers/store/redis"
 )
 
-func RateLimit() gin.HandlerFunc {
-	// Allow maximum 100 reqs per second.
-	rate, err := limiter.NewRateFromFormatted("100-s")
+// RateLimit creates a rate-limiting middleware.
+// numberRequest: maximum number of requests allowed.
+// period: time window — "S" (second), "M" (minute), "H" (hour), "D" (day).
+func RateLimit(numberRequest int, period string) gin.HandlerFunc {
+	rate, err := limiter.NewRateFromFormatted(fmt.Sprintf("%d-%s", numberRequest, period))
 	if err != nil {
 		panic(err)
 	}
